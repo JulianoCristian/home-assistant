@@ -14,8 +14,8 @@ from tests.common import MockModule, mock_coro, MockConfigEntry
 @pytest.fixture
 def manager(hass):
     """Fixture of a loaded config manager."""
-    manager = config_manager.ConfigManager(hass)
-    manager.entries = []
+    manager = config_manager.ConfigManager(hass, {})
+    manager._entries = []
     hass.config_manager = manager
     return manager
 
@@ -86,8 +86,8 @@ def test_configure_reuses_handler_instance(manager):
         assert form['title'] == '1'
         form = yield from manager.async_configure(form['flow_id'])
         assert form['title'] == '2'
-        assert len(manager.progress) == 1
-        assert len(manager.entries) == 0
+        assert len(manager.async_progress()) == 1
+        assert len(manager.async_entries()) == 0
 
 
 @asyncio.coroutine
@@ -125,9 +125,9 @@ def test_configure_two_steps(manager):
         form = yield from manager.async_configure(
             form['flow_id'], ['SECOND-DATA'])
         assert form['type'] == config_manager.RESULT_TYPE_CREATE_ENTRY
-        assert len(manager.progress) == 0
-        assert len(manager.entries) == 1
-        entry = manager.entries[0]
+        assert len(manager.async_progress()) == 0
+        assert len(manager.async_entries()) == 1
+        entry = manager.async_entries()[0]
         assert entry.domain == 'test'
         assert entry.data == ['INIT-DATA', 'SECOND-DATA']
 
@@ -179,12 +179,12 @@ def test_abort_removes_instance(manager):
     with patch.dict(config_manager.HANDLERS, {'test': TestFlow}):
         form = yield from manager.async_init_flow('test')
         assert form['reason'] == 'True'
-        assert len(manager.progress) == 0
-        assert len(manager.entries) == 0
+        assert len(manager.async_progress()) == 0
+        assert len(manager.async_entries()) == 0
         form = yield from manager.async_init_flow('test')
         assert form['reason'] == 'True'
-        assert len(manager.progress) == 0
-        assert len(manager.entries) == 0
+        assert len(manager.async_progress()) == 0
+        assert len(manager.async_entries()) == 0
 
 
 @asyncio.coroutine
@@ -202,10 +202,10 @@ def test_create_saves_data(manager):
 
     with patch.dict(config_manager.HANDLERS, {'test': TestFlow}):
         yield from manager.async_init_flow('test')
-        assert len(manager.progress) == 0
-        assert len(manager.entries) == 1
+        assert len(manager.async_progress()) == 0
+        assert len(manager.async_entries()) == 1
 
-        entry = manager.entries[0]
+        entry = manager.async_entries()[0]
         assert entry.version == 5
         assert entry.domain == 'test'
         assert entry.title == 'Test Title'
@@ -284,14 +284,14 @@ def test_saving_and_loading(hass):
     written = mock_write.mock_calls[2][1][0]
 
     # Now load written data in new config manager
-    manager = config_manager.ConfigManager(hass)
+    manager = config_manager.ConfigManager(hass, {})
 
     with patch('os.path.isfile', return_value=True), \
             patch(json_path, mock_open(read_data=written), create=True):
         yield from manager.async_load()
 
     # Ensure same order
-    for orig, loaded in zip(hass.config_manager.entries, manager.entries):
+    for orig, loaded in zip(hass.config_manager.async_entries(), manager.async_entries()):
         assert orig.version == loaded.version
         assert orig.domain == loaded.domain
         assert orig.title == loaded.title

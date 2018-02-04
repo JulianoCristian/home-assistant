@@ -3,11 +3,9 @@ import asyncio
 import os
 import uuid
 
-import voluptuous as vol
-
 from .core import callback
 from .exceptions import HomeAssistantError
-from .setup import async_setup_component
+from .setup import async_setup_component, process_deps_reqs
 from .util.decorator import Registry
 from .util.json import load_json, save_json
 
@@ -33,12 +31,12 @@ RESULT_TYPE_ABORT = 'abort'
 class ConfigEntry:
     """Hold a configuration entry."""
 
-    __slots__ = ('config_id', 'version', 'domain', 'title', 'data', 'source')
+    __slots__ = ('entry_id', 'version', 'domain', 'title', 'data', 'source')
 
-    def __init__(self, config_id, version, domain, title, data, source):
+    def __init__(self, entry_id, version, domain, title, data, source):
         """Initialize a config entry."""
         # Unique id of the config entry
-        self.config_id = config_id
+        self.entry_id = entry_id
 
         # Version of the configuration.
         self.version = version
@@ -58,7 +56,7 @@ class ConfigEntry:
     def as_dict(self):
         """Return dictionary version of this entry."""
         return {
-            'config_id': self.config_id,
+            'entry_id': self.entry_id,
             'version': self.version,
             'domain': self.domain,
             'title': self.title,
@@ -86,28 +84,42 @@ class UnknownStep(ConfigError):
 class ConfigManager:
     """Manage the configurations and keep track of the ones in progress."""
 
-    def __init__(self, hass):
+    def __init__(self, hass, hass_config):
         """Initialize the config manager."""
         self.hass = hass
-        self.entries = None
-        self.progress = {}
+        self._hass_config = hass_config
+        self._entries = None
+        self._progress = {}
         self._sched_save = None
 
+    @callback
     def async_domains(self):
         """Return domains for which we have entries."""
         seen = set()
         result = []
 
-        for entry in self.entries:
+        for entry in self._entries:
             if entry.domain not in seen:
                 seen.add(entry.domain)
                 result.append(entry.domain)
 
         return result
 
-    def async_entries(self, domain):
-        """Return all entries for a specific domain."""
-        return [entry for entry in self.entries if entry.domain == domain]
+    @callback
+    def async_entries(self, domain=None):
+        """Return all entries or entries for a specific domain."""
+        if domain is None:
+            return list(self._entries)
+        return [entry for entry in self._entries if entry.domain == domain]
+
+    @callback
+    def async_progress(self):
+        """Return the flows in progress."""
+        return [{
+            'flow_id': flow.flow_id,
+            'domain': flow.domain,
+            'source': flow.source,
+        } for flow in self._progress.values()]
 
     @asyncio.coroutine
     def async_init_flow(self, domain):
@@ -115,11 +127,19 @@ class ConfigManager:
         handler = HANDLERS.get(domain)
 
         if handler is None:
-            # TODO: see if we can load component (and install requirements)
-            raise UnknownHandler
+            # Loading a component will register the handler
+            component = getattr(self.hass.components, domain)
+            handler = HANDLERS.get(domain)
+
+            if handler is None:
+                raise UnknownHandler
+
+            # Make sure requirements and dependencies of component are resolved
+            yield from process_deps_reqs(
+                self.hass, self._hass_config, domain, component)
 
         flow_id = uuid.uuid4().hex
-        flow = self.progress[flow_id] = handler()
+        flow = self._progress[flow_id] = handler()
         flow.hass = self.hass
         flow.domain = domain
         flow.flow_id = flow_id
@@ -129,7 +149,7 @@ class ConfigManager:
     @asyncio.coroutine
     def async_configure(self, flow_id, user_input=None):
         """Start or continue a configuration flow."""
-        flow = self.progress.get(flow_id)
+        flow = self._progress.get(flow_id)
 
         if flow is None:
             raise UnknownFlow
@@ -147,7 +167,7 @@ class ConfigManager:
         method = "async_step_{}".format(step_id)
 
         if not hasattr(flow, method):
-            self.progress.pop(flow.flow_id)
+            self._progress.pop(flow.flow_id)
             raise UnknownStep("Handler {} doesn't support step {}".format(
                 flow.__class__.__name__, step_id))
 
@@ -163,20 +183,20 @@ class ConfigManager:
             return result
 
         # Abort and Success results both finish the flow
-        self.progress.pop(flow.flow_id)
+        self._progress.pop(flow.flow_id)
 
         if result['type'] == RESULT_TYPE_ABORT:
             return result
 
         entry = ConfigEntry(
-            config_id=flow.flow_id,
+            entry_id=flow.flow_id,
             version=flow.version,
             domain=flow.domain,
             title=result['title'],
             data=result.pop('data'),
             source=flow.source
         )
-        self.entries.append(entry)
+        self._entries.append(entry)
 
         # Setup entry
         if flow.domain in self.hass.config.components:
@@ -199,10 +219,10 @@ class ConfigManager:
         """Load the config."""
         path = self.hass.config.path(PATH_CONFIG)
         if not os.path.isfile(path):
-            self.entries = []
+            self._entries = []
 
         entries = yield from self.hass.async_add_job(load_json, path)
-        self.entries = [ConfigEntry(**entry) for entry in entries]
+        self._entries = [ConfigEntry(**entry) for entry in entries]
 
     @callback
     def async_schedule_save(self):
@@ -218,7 +238,7 @@ class ConfigManager:
     def _async_save(self):
         """Save the entity registry to a file."""
         self._sched_save = None
-        data = [entry.as_dict() for entry in self.entries]
+        data = [entry.as_dict() for entry in self._entries]
 
         yield from self.hass.async_add_job(
             save_json, self.hass.config.path(PATH_CONFIG), data)

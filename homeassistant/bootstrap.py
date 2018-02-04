@@ -124,7 +124,7 @@ def async_from_config_dict(config: Dict[str, Any],
         new_config[key] = value or {}
     config = new_config
 
-    hass.config_manager = config_manager.ConfigManager(hass)
+    hass.config_manager = config_manager.ConfigManager(hass, config)
     yield from hass.config_manager.async_load()
 
     # Filter out the repeating and common config section [homeassistant]

@@ -113,8 +113,8 @@ def get_test_home_assistant():
 def async_test_home_assistant(loop):
     """Return a Home Assistant object pointing at test config dir."""
     hass = ha.HomeAssistant(loop)
-    hass.config_manager = config_manager.ConfigManager(hass)
-    hass.config_manager.entries = []
+    hass.config_manager = config_manager.ConfigManager(hass, {})
+    hass.config_manager._entries = []
     hass.config.async_load = Mock()
     INSTANCES.append(hass)
 
@@ -434,11 +434,11 @@ class MockToggleDevice(entity.ToggleEntity):
 class MockConfigEntry(config_manager.ConfigEntry):
     """Helper for creating config entries that adds some defaults."""
 
-    def __init__(self, *, domain, data=None, version=0, config_id=None,
+    def __init__(self, *, domain, data=None, version=0, entry_id=None,
                  source=config_manager.SOURCE_USER, title='Mock Title'):
         """Initialize a mock config entry."""
         kwargs = {
-            'config_id': config_id or 'mock-id',
+            'entry_id': entry_id or 'mock-id',
             'domain': domain,
             'data': data or {},
             'version': version,
@@ -450,11 +450,11 @@ class MockConfigEntry(config_manager.ConfigEntry):
 
     def add_to_hass(self, hass):
         """Test helper to add entry to hass."""
-        hass.config_manager.entries.append(self)
+        hass.config_manager._entries.append(self)
 
     def add_to_manager(self, manager):
         """Test helper to add entry to manager."""
-        manager.entries.append(self)
+        manager._entries.append(self)
 
 
 def patch_yaml_files(files_dict, endswith=True):

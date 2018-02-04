@@ -123,7 +123,7 @@ def _async_setup_component(hass: core.HomeAssistant,
         return False
 
     try:
-        yield from _process_deps_reqs(hass, config, domain, component)
+        yield from process_deps_reqs(hass, config, domain, component)
     except HomeAssistantError as err:
         log_error(str(err))
         return False
@@ -209,7 +209,7 @@ def async_prepare_setup_platform(hass: core.HomeAssistant, config, domain: str,
         return platform
 
     try:
-        yield from _process_deps_reqs(hass, config, platform_name, platform)
+        yield from process_deps_reqs(hass, config, platform_name, platform)
     except HomeAssistantError as err:
         log_error(str(err))
         return None
@@ -218,7 +218,7 @@ def async_prepare_setup_platform(hass: core.HomeAssistant, config, domain: str,
 
 
 @asyncio.coroutine
-def _process_deps_reqs(hass, config, name, module):
+def process_deps_reqs(hass, config, name, module):
     """Process all dependencies and requirements for a module.
 
     Module is a Python module of either a component or platform.

@@ -8,10 +8,6 @@ from homeassistant.components.http import (
     HomeAssistantView, RequestDataValidator)
 
 
-# TEMP, to register Hue handler
-from homeassistant.components import hue, nest
-
-
 # Will upload to PyPi when closer to merging.
 REQUIREMENTS = ['https://github.com/balloob/voluptuous-json/archive/master.zip'
                 '#voluptuous_json==0.1']
@@ -20,8 +16,9 @@ REQUIREMENTS = ['https://github.com/balloob/voluptuous-json/archive/master.zip'
 @asyncio.coroutine
 def async_setup(hass):
     """Enable the Home Assistant views."""
-    hass.http.register_view(ConfigManagerCreateView)
-    hass.http.register_view(ConfigManagerProgressView)
+    hass.http.register_view(ConfigManagerEntryIndexView)
+    hass.http.register_view(ConfigManagerFlowIndexView)
+    hass.http.register_view(ConfigManagerFlowResourceView)
     return True
 
 
@@ -37,11 +34,35 @@ def _prepare_json(result):
             result['data_schema'] = voluptuous_json.convert(schema)
 
 
-class ConfigManagerCreateView(HomeAssistantView):
+class ConfigManagerEntryIndexView(HomeAssistantView):
+    """View to create config flows."""
+
+    url = '/api/config/config_manager/entry'
+    name = 'api:config:config_manager:entry'
+
+    @asyncio.coroutine
+    def get(self, request):
+        """List flows in progress."""
+        hass = request.app['hass']
+        return self.json([{
+            'entry_id': entry.entry_id,
+            'domain': entry.domain,
+            'title': entry.title,
+            'source': entry.source,
+        } for entry in hass.config_manager.async_entries()])
+
+
+class ConfigManagerFlowIndexView(HomeAssistantView):
     """View to create config flows."""
 
     url = '/api/config/config_manager/flow'
     name = 'api:config:config_manager:flow'
+
+    @asyncio.coroutine
+    def get(self, request):
+        """List flows in progress."""
+        hass = request.app['hass']
+        return self.json(hass.config_manager.async_progress())
 
     @asyncio.coroutine
     @RequestDataValidator(vol.Schema({
@@ -64,11 +85,11 @@ class ConfigManagerCreateView(HomeAssistantView):
         return self.json(result)
 
 
-class ConfigManagerProgressView(HomeAssistantView):
+class ConfigManagerFlowResourceView(HomeAssistantView):
     """View to interact with the config manager."""
 
     url = '/api/config/config_manager/flow/{flow_id}'
-    name = 'api:config:config_manager:flow:progress'
+    name = 'api:config:config_manager:flow:resource'
 
     @asyncio.coroutine
     def get(self, request, flow_id):
@@ -83,7 +104,6 @@ class ConfigManagerProgressView(HomeAssistantView):
         _prepare_json(result)
 
         return self.json(result)
-
 
     @asyncio.coroutine
     @RequestDataValidator(vol.Schema(dict), allow_empty=True)
