@@ -150,3 +150,27 @@ def test_two_step_flow(hass, client):
         data = yield from resp.json()
         assert data['type'] == 'create_entry'
         assert data['title'] == 'user-title'
+
+
+@asyncio.coroutine
+def test_aborting_flow(hass, client):
+    """."""
+    # TODO
+
+
+@asyncio.coroutine
+def test_get_entries(hass, client):
+    """."""
+    # TODO
+
+
+@asyncio.coroutine
+def test_get_progress_index(hass, client):
+    """."""
+    # TODO
+
+
+@asyncio.coroutine
+def test_get_progress_flow(hass, client):
+    """."""
+    # TODO

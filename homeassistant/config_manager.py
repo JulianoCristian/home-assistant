@@ -162,6 +162,12 @@ class ConfigManager:
         return (yield from self._async_handle_step(flow, step_id, user_input))
 
     @asyncio.coroutine
+    def async_abort(self, flow_id):
+        """Abort a flow."""
+        if self._progress.pop(flow_id, None) is None:
+            raise UnknownFlow
+
+    @asyncio.coroutine
     def _async_handle_step(self, flow, step_id, user_input):
         """Handle a step of a flow."""
         method = "async_step_{}".format(step_id)

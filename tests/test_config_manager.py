@@ -291,7 +291,8 @@ def test_saving_and_loading(hass):
         yield from manager.async_load()
 
     # Ensure same order
-    for orig, loaded in zip(hass.config_manager.async_entries(), manager.async_entries()):
+    for orig, loaded in zip(hass.config_manager.async_entries(),
+                            manager.async_entries()):
         assert orig.version == loaded.version
         assert orig.domain == loaded.domain
         assert orig.title == loaded.title
@@ -301,5 +302,5 @@ def test_saving_and_loading(hass):
 
 @asyncio.coroutine
 def test_using_schema_validate_input():
-    # How will this even work, we no longer have last result?
-    pass
+    """Test that the configure step uses the schema from the form."""
+    # TODO

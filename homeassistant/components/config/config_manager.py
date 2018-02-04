@@ -62,7 +62,16 @@ class ConfigManagerFlowIndexView(HomeAssistantView):
     def get(self, request):
         """List flows in progress."""
         hass = request.app['hass']
-        return self.json(hass.config_manager.async_progress())
+
+        # We only allow filtering by discovery source
+        if (request.query.get('filter_source') !=
+                config_manager.SOURCE_DISCOVERY):
+            return b'', 400
+
+        # We will only allow when filtering by source=discovery.
+        return self.json([
+            flow for flow in hass.config_manager.async_progress()
+            if flow['source'] == config_manager.SOURCE_DISCOVERY])
 
     @asyncio.coroutine
     @RequestDataValidator(vol.Schema({
@@ -122,3 +131,15 @@ class ConfigManagerFlowResourceView(HomeAssistantView):
         _prepare_json(result)
 
         return self.json(result)
+
+    @asyncio.coroutine
+    def delete(self, request, flow_id):
+        """Cancel a flow in progress."""
+        hass = request.app['hass']
+
+        try:
+            yield from hass.config_manager.async_abort(flow_id)
+        except config_manager.UnknownFlow:
+            return self.json_message('Invalid flow specified', 404)
+
+        return self.json_message('Flow aborted')
