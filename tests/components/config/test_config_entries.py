@@ -267,7 +267,6 @@ def test_get_progress_index(hass, client):
     ]
 
 
-
 @asyncio.coroutine
 def test_get_progress_flow(hass, client):
     """Test we can query the API for same result as we get from init a flow."""
