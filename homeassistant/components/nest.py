@@ -41,7 +41,7 @@ AWAY_SCHEMA = vol.Schema({
 })
 
 CONFIG_SCHEMA = vol.Schema({
-    vol.Optional(DOMAIN): vol.Schema({
+    DOMAIN: vol.Schema({
         vol.Required(CONF_CLIENT_ID): cv.string,
         vol.Required(CONF_CLIENT_SECRET): cv.string,
         vol.Optional(CONF_STRUCTURE): vol.All(cv.ensure_list, cv.string),
@@ -120,11 +120,6 @@ def setup(hass, config):
 
     if 'nest' in _CONFIGURING:
         return
-
-    # Happens if we get set up for config entry.
-    # TODO clean this up.
-    if DOMAIN not in config:
-        return True
 
     conf = config[DOMAIN]
     client_id = conf[CONF_CLIENT_ID]

@@ -55,8 +55,6 @@ CONFIG_SCHEMA = vol.Schema({
     }),
 }, extra=vol.ALLOW_EXTRA)
 
-PATH_CONF_FORMAT = '.hue_{}.conf'
-
 ATTR_GROUP_NAME = "group_name"
 ATTR_SCENE_NAME = "scene_name"
 SCENE_SCHEMA = vol.Schema({
@@ -95,7 +93,7 @@ def setup(hass, config):
         hosts = requests.get(API_NUPNP).json()
         bridges = [{
             CONF_HOST: entry['internalipaddress'],
-            CONF_FILENAME: PATH_CONF_FORMAT.format(entry['id']),
+            CONF_FILENAME: '.hue_{}.conf'.format(entry['id']),
         } for entry in hosts]
     else:
         # Component not specified in config, we're loaded via discovery
