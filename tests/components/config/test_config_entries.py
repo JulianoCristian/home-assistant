@@ -1,21 +1,22 @@
-"""Test config manager API."""
+"""Test config entries API."""
 
 import asyncio
+from collections import OrderedDict
 from unittest.mock import patch
 
 import pytest
 import voluptuous as vol
 
-from homeassistant.config_manager import ConfigFlowHandler, HANDLERS
+from homeassistant.config_entries import ConfigFlowHandler, HANDLERS
 from homeassistant.setup import async_setup_component
-from homeassistant.components.config import config_manager
+from homeassistant.components.config import config_entries
 
 
 @pytest.fixture
 def client(hass, test_client):
     """Fixture that can interact with the config manager API."""
     hass.loop.run_until_complete(async_setup_component(hass, 'http', {}))
-    hass.loop.run_until_complete(config_manager.async_setup(hass))
+    hass.loop.run_until_complete(config_entries.async_setup(hass))
     yield hass.loop.run_until_complete(test_client(hass.http.app))
 
 
@@ -25,21 +26,22 @@ def test_initialize_flow(hass, client):
     class TestFlow(ConfigFlowHandler):
         @asyncio.coroutine
         def async_step_init(self, user_input=None):
+            schema = OrderedDict()
+            schema[vol.Required('username')] = str
+            schema[vol.Required('password')] = str
+
             return self.async_show_form(
                 title='test-title',
                 step_id='init',
                 description='test-description',
-                data_schema=vol.Schema({
-                    vol.Required('username'): str,
-                    vol.Required('password'): str
-                }),
+                data_schema=schema,
                 errors={
                     'username': 'Should be unique.'
                 }
             )
 
     with patch.dict(HANDLERS, {'test': TestFlow}):
-        resp = yield from client.post('/api/config/config_manager/flow',
+        resp = yield from client.post('/api/config/config_entries/flow',
                                       json={'domain': 'test'})
 
     assert resp.status == 200
@@ -73,7 +75,7 @@ def test_abort(hass, client):
             return self.async_abort(reason='bla')
 
     with patch.dict(HANDLERS, {'test': TestFlow}):
-        resp = yield from client.post('/api/config/config_manager/flow',
+        resp = yield from client.post('/api/config/config_entries/flow',
                                       json={'domain': 'test'})
 
     assert resp.status == 200
@@ -89,6 +91,10 @@ def test_abort(hass, client):
 def test_create_account(hass, client):
     """Test a flow that creates an account."""
     class TestFlow(ConfigFlowHandler):
+        ENTRY_SCHEMA = vol.Schema({
+            'secret': str
+        })
+
         @asyncio.coroutine
         def async_step_init(self, user_input=None):
             return self.async_create_entry(
@@ -97,7 +103,7 @@ def test_create_account(hass, client):
             )
 
     with patch.dict(HANDLERS, {'test': TestFlow}):
-        resp = yield from client.post('/api/config/config_manager/flow',
+        resp = yield from client.post('/api/config/config_entries/flow',
                                       json={'domain': 'test'})
 
     assert resp.status == 200
@@ -113,6 +119,10 @@ def test_create_account(hass, client):
 def test_two_step_flow(hass, client):
     """Test we can finish a two step flow."""
     class TestFlow(ConfigFlowHandler):
+        ENTRY_SCHEMA = vol.Schema({
+            'secret': str
+        })
+
         @asyncio.coroutine
         def async_step_init(self, user_input=None):
             return self.async_show_form(
@@ -130,7 +140,7 @@ def test_two_step_flow(hass, client):
             )
 
     with patch.dict(HANDLERS, {'test': TestFlow}):
-        resp = yield from client.post('/api/config/config_manager/flow',
+        resp = yield from client.post('/api/config/config_entries/flow',
                                       json={'domain': 'test'})
         assert resp.status == 200
         data = yield from resp.json()
@@ -144,7 +154,7 @@ def test_two_step_flow(hass, client):
 
     with patch.dict(HANDLERS, {'test': TestFlow}):
         resp = yield from client.post(
-            '/api/config/config_manager/flow/{}'.format(data['flow_id']),
+            '/api/config/config_entries/flow/{}'.format(data['flow_id']),
             json={'user_title': 'user-title'})
         assert resp.status == 200
         data = yield from resp.json()
@@ -172,5 +182,17 @@ def test_get_progress_index(hass, client):
 
 @asyncio.coroutine
 def test_get_progress_flow(hass, client):
+    """."""
+    # TODO
+
+
+@asyncio.coroutine
+def test_remove_entry(hass, client):
+    """."""
+    # TODO
+
+
+@asyncio.coroutine
+def test_available_flows(hass, client):
     """."""
     # TODO

@@ -3,7 +3,7 @@ import asyncio
 
 import voluptuous as vol
 
-from homeassistant import config_manager
+from homeassistant import config_entries
 from homeassistant.components.http import (
     HomeAssistantView, RequestDataValidator)
 
@@ -17,8 +17,10 @@ REQUIREMENTS = ['https://github.com/balloob/voluptuous-json/archive/master.zip'
 def async_setup(hass):
     """Enable the Home Assistant views."""
     hass.http.register_view(ConfigManagerEntryIndexView)
+    hass.http.register_view(ConfigManagerEntryResourceView)
     hass.http.register_view(ConfigManagerFlowIndexView)
     hass.http.register_view(ConfigManagerFlowResourceView)
+    hass.http.register_view(ConfigManagerAvailableFlowView)
     return True
 
 
@@ -26,7 +28,7 @@ def _prepare_json(result):
     """Convert result for JSON."""
     import voluptuous_json
 
-    if result['type'] == config_manager.RESULT_TYPE_FORM:
+    if result['type'] == config_entries.RESULT_TYPE_FORM:
         schema = result['data_schema']
         if schema is None:
             result['data_schema'] = []
@@ -37,8 +39,8 @@ def _prepare_json(result):
 class ConfigManagerEntryIndexView(HomeAssistantView):
     """View to create config flows."""
 
-    url = '/api/config/config_manager/entry'
-    name = 'api:config:config_manager:entry'
+    url = '/api/config/config_entries/entry'
+    name = 'api:config:config_entries:entry'
 
     @asyncio.coroutine
     def get(self, request):
@@ -49,14 +51,33 @@ class ConfigManagerEntryIndexView(HomeAssistantView):
             'domain': entry.domain,
             'title': entry.title,
             'source': entry.source,
-        } for entry in hass.config_manager.async_entries()])
+        } for entry in hass.config_entries.async_entries()])
+
+
+class ConfigManagerEntryResourceView(HomeAssistantView):
+    """View to create config flows."""
+
+    url = '/api/config/config_entries/entry/{entry_id}'
+    name = 'api:config:config_entries:entry:resource'
+
+    @asyncio.coroutine
+    def delete(self, request, entry_id):
+        """Delete a config entry."""
+        hass = request.app['hass']
+
+        try:
+            result = yield from hass.config_entries.async_remove(entry_id)
+        except config_entries.UnknownEntry:
+            return self.json_message('Invalid entry specified', 404)
+
+        return self.json(result)
 
 
 class ConfigManagerFlowIndexView(HomeAssistantView):
     """View to create config flows."""
 
-    url = '/api/config/config_manager/flow'
-    name = 'api:config:config_manager:flow'
+    url = '/api/config/config_entries/flow'
+    name = 'api:config:config_entries:flow'
 
     @asyncio.coroutine
     def get(self, request):
@@ -65,13 +86,13 @@ class ConfigManagerFlowIndexView(HomeAssistantView):
 
         # We only allow filtering by discovery source
         if (request.query.get('filter_source') !=
-                config_manager.SOURCE_DISCOVERY):
+                config_entries.SOURCE_DISCOVERY):
             return b'', 400
 
         # We will only allow when filtering by source=discovery.
         return self.json([
-            flow for flow in hass.config_manager.async_progress()
-            if flow['source'] == config_manager.SOURCE_DISCOVERY])
+            flow for flow in hass.config_entries.flow.async_progress()
+            if flow['source'] == config_entries.SOURCE_DISCOVERY])
 
     @asyncio.coroutine
     @RequestDataValidator(vol.Schema({
@@ -82,11 +103,11 @@ class ConfigManagerFlowIndexView(HomeAssistantView):
         hass = request.app['hass']
 
         try:
-            result = yield from hass.config_manager.async_init_flow(
+            result = yield from hass.config_entries.flow.async_init(
                 data['domain'])
-        except config_manager.UnknownHandler:
+        except config_entries.UnknownHandler:
             return self.json_message('Invalid handler specified', 404)
-        except config_manager.UnknownStep:
+        except config_entries.UnknownStep:
             return self.json_message('Handler does not support init', 400)
 
         _prepare_json(result)
@@ -97,8 +118,8 @@ class ConfigManagerFlowIndexView(HomeAssistantView):
 class ConfigManagerFlowResourceView(HomeAssistantView):
     """View to interact with the config manager."""
 
-    url = '/api/config/config_manager/flow/{flow_id}'
-    name = 'api:config:config_manager:flow:resource'
+    url = '/api/config/config_entries/flow/{flow_id}'
+    name = 'api:config:config_entries:flow:resource'
 
     @asyncio.coroutine
     def get(self, request, flow_id):
@@ -106,8 +127,9 @@ class ConfigManagerFlowResourceView(HomeAssistantView):
         hass = request.app['hass']
 
         try:
-            result = yield from hass.config_manager.async_configure(flow_id)
-        except config_manager.UnknownFlow:
+            result = yield from hass.config_entries.flow.async_configure(
+                flow_id)
+        except config_entries.UnknownFlow:
             return self.json_message('Invalid flow specified', 404)
 
         _prepare_json(result)
@@ -121,9 +143,9 @@ class ConfigManagerFlowResourceView(HomeAssistantView):
         hass = request.app['hass']
 
         try:
-            result = yield from hass.config_manager.async_configure(
+            result = yield from hass.config_entries.flow.async_configure(
                 flow_id, data)
-        except config_manager.UnknownFlow:
+        except config_entries.UnknownFlow:
             return self.json_message('Invalid flow specified', 404)
         except vol.Invalid:
             return self.json_message('User input malformed', 400)
@@ -138,8 +160,20 @@ class ConfigManagerFlowResourceView(HomeAssistantView):
         hass = request.app['hass']
 
         try:
-            yield from hass.config_manager.async_abort(flow_id)
-        except config_manager.UnknownFlow:
+            hass.config_entries.async_abort(flow_id)
+        except config_entries.UnknownFlow:
             return self.json_message('Invalid flow specified', 404)
 
         return self.json_message('Flow aborted')
+
+
+class ConfigManagerAvailableFlowView(HomeAssistantView):
+    """View to query available flows."""
+
+    url = '/api/config/config_entries/flow_handlers'
+    name = 'api:config:config_entries:flow_handlers'
+
+    @asyncio.coroutine
+    def get(self, request):
+        """List available flow handlers."""
+        return self.json(config_entries.FLOWS)

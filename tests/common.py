@@ -11,7 +11,7 @@ from contextlib import contextmanager
 
 from aiohttp import web
 
-from homeassistant import core as ha, loader, config_manager
+from homeassistant import core as ha, loader, config_entries
 from homeassistant.setup import setup_component, async_setup_component
 from homeassistant.config import async_process_component_config
 from homeassistant.helpers import intent, dispatcher, entity, restore_state
@@ -113,8 +113,8 @@ def get_test_home_assistant():
 def async_test_home_assistant(loop):
     """Return a Home Assistant object pointing at test config dir."""
     hass = ha.HomeAssistant(loop)
-    hass.config_manager = config_manager.ConfigManager(hass, {})
-    hass.config_manager._entries = []
+    hass.config_entries = config_entries.ConfigEntries(hass, {})
+    hass.config_entries._entries = []
     hass.config.async_load = Mock()
     INSTANCES.append(hass)
 
@@ -431,11 +431,11 @@ class MockToggleDevice(entity.ToggleEntity):
                 return None
 
 
-class MockConfigEntry(config_manager.ConfigEntry):
+class MockConfigEntry(config_entries.ConfigEntry):
     """Helper for creating config entries that adds some defaults."""
 
     def __init__(self, *, domain, data=None, version=0, entry_id=None,
-                 source=config_manager.SOURCE_USER, title='Mock Title'):
+                 source=config_entries.SOURCE_USER, title='Mock Title'):
         """Initialize a mock config entry."""
         kwargs = {
             'entry_id': entry_id or 'mock-id',
@@ -450,10 +450,10 @@ class MockConfigEntry(config_manager.ConfigEntry):
 
     def add_to_hass(self, hass):
         """Test helper to add entry to hass."""
-        hass.config_manager._entries.append(self)
+        hass.config_entries._entries.append(self)
 
     def add_to_manager(self, manager):
-        """Test helper to add entry to manager."""
+        """Test helper to add entry to entry manager."""
         manager._entries.append(self)
 
 
