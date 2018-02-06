@@ -13,8 +13,7 @@ from homeassistant.util.yaml import load_yaml, dump
 
 DOMAIN = 'config'
 DEPENDENCIES = ['http']
-SECTIONS = ('core', 'customize', 'group', 'hassbian', 'automation', 'script',
-            'config_entries')
+SECTIONS = ('core', 'customize', 'group', 'hassbian', 'automation', 'script')
 ON_DEMAND = ('zwave')
 
 
@@ -23,6 +22,10 @@ def async_setup(hass, config):
     """Set up the config component."""
     yield from hass.components.frontend.async_register_built_in_panel(
         'config', 'config', 'mdi:settings')
+
+    if config.get(DOMAIN, {}).get('config_entries'):
+        global SECTIONS
+        SECTIONS = SECTIONS + ('config_entries',)
 
     @asyncio.coroutine
     def setup_panel(panel_name):
