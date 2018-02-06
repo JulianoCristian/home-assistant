@@ -8,9 +8,7 @@ from homeassistant.components.http import (
     HomeAssistantView, RequestDataValidator)
 
 
-# Will upload to PyPi when closer to merging.
-REQUIREMENTS = ['https://github.com/balloob/voluptuous-json/archive/master.zip'
-                '#voluptuous_json==0.1']
+REQUIREMENTS = ['voluptuous-serialize==0.1']
 
 
 @asyncio.coroutine
@@ -26,14 +24,14 @@ def async_setup(hass):
 
 def _prepare_json(result):
     """Convert result for JSON."""
-    import voluptuous_json
+    import voluptuous_serialize
 
     if result['type'] == config_entries.RESULT_TYPE_FORM:
         schema = result['data_schema']
         if schema is None:
             result['data_schema'] = []
         else:
-            result['data_schema'] = voluptuous_json.convert(schema)
+            result['data_schema'] = voluptuous_serialize.convert(schema)
 
 
 class ConfigManagerEntryIndexView(HomeAssistantView):
