@@ -166,7 +166,7 @@ def _async_setup_component(hass: core.HomeAssistant,
         return False
 
     for entry in hass.config_entries.async_entries(domain):
-        yield from component.async_setup_entry(hass, entry)
+        yield from entry.async_setup(hass, component=component)
 
     hass.config.components.add(component.DOMAIN)
 

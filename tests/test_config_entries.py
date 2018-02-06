@@ -37,9 +37,58 @@ def test_call_setup_entry(hass):
 
 
 @asyncio.coroutine
-def test_call_unload_entry(hass):
-    """."""
-    # TODO
+def test_remove_entry(manager):
+    """Test that we can remove an entry."""
+    mock_unload_entry = MagicMock(return_value=mock_coro(True))
+
+    loader.set_component(
+        'test',
+        MockModule('comp', async_unload_entry=mock_unload_entry))
+
+    MockConfigEntry(domain='test', entry_id='test1').add_to_manager(manager)
+    MockConfigEntry(domain='test', entry_id='test2').add_to_manager(manager)
+    MockConfigEntry(domain='test', entry_id='test3').add_to_manager(manager)
+
+    assert [item.entry_id for item in manager.async_entries()] == \
+        ['test1', 'test2', 'test3']
+
+    result = yield from manager.async_remove('test2')
+
+    assert result == {
+        'require_restart': False
+    }
+    assert [item.entry_id for item in manager.async_entries()] == \
+        ['test1', 'test3']
+
+    assert len(mock_unload_entry.mock_calls) == 1
+
+
+@asyncio.coroutine
+def test_remove_entry_raises(manager):
+    """Test if a component raises while removing entry."""
+    @asyncio.coroutine
+    def mock_unload_entry(hass, entry):
+        """Mock unload entry function."""
+        raise Exception("BROKEN")
+
+    loader.set_component(
+        'test',
+        MockModule('comp', async_unload_entry=mock_unload_entry))
+
+    MockConfigEntry(domain='test', entry_id='test1').add_to_manager(manager)
+    MockConfigEntry(domain='test', entry_id='test2').add_to_manager(manager)
+    MockConfigEntry(domain='test', entry_id='test3').add_to_manager(manager)
+
+    assert [item.entry_id for item in manager.async_entries()] == \
+        ['test1', 'test2', 'test3']
+
+    result = yield from manager.async_remove('test2')
+
+    assert result == {
+        'require_restart': True
+    }
+    assert [item.entry_id for item in manager.async_entries()] == \
+        ['test1', 'test3']
 
 
 @asyncio.coroutine
@@ -171,12 +220,6 @@ def test_saving_and_loading(hass):
         assert orig.source == loaded.source
 
 
-@asyncio.coroutine
-def test_remove_entry():
-    """Test that the configure step uses the schema from the form."""
-    # TODO
-
-
 #######################
 #  FLOW MANAGER TESTS #
 #######################
@@ -235,6 +278,11 @@ def test_configure_two_steps(manager):
 
     with patch.dict(config_entries.HANDLERS, {'test': TestFlow}):
         form = yield from manager.flow.async_init('test')
+
+        with pytest.raises(vol.Invalid):
+            form = yield from manager.flow.async_configure(
+                form['flow_id'], 'INCORRECT-DATA')
+
         form = yield from manager.flow.async_configure(
             form['flow_id'], ['INIT-DATA'])
         form = yield from manager.flow.async_configure(
@@ -330,6 +378,33 @@ def test_create_saves_data(manager):
 
 
 @asyncio.coroutine
-def test_using_schema_validate_input():
-    """Test that the configure step uses the schema from the form."""
-    # TODO
+def test_discovery_init_flow(manager):
+    """Test a flow initialized by discovery."""
+    class TestFlow(config_entries.ConfigFlowHandler):
+        VERSION = 5
+        ENTRY_SCHEMA = vol.Schema({
+            'id': str,
+            'token': str
+        })
+
+        @asyncio.coroutine
+        def async_step_discovery(self, info):
+            return self.async_create_entry(title=info['id'], data=info)
+
+    data = {
+        'id': 'hello',
+        'token': 'secret'
+    }
+
+    with patch.dict(config_entries.HANDLERS, {'test': TestFlow}):
+        yield from manager.flow.async_init(
+            'test', source=config_entries.SOURCE_DISCOVERY, data=data)
+        assert len(manager.flow.async_progress()) == 0
+        assert len(manager.async_entries()) == 1
+
+        entry = manager.async_entries()[0]
+        assert entry.version == 5
+        assert entry.domain == 'test'
+        assert entry.title == 'hello'
+        assert entry.data == data
+        assert entry.source == config_entries.SOURCE_DISCOVERY

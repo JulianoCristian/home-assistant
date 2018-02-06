@@ -51,6 +51,7 @@ class ConfigManagerEntryIndexView(HomeAssistantView):
             'domain': entry.domain,
             'title': entry.title,
             'source': entry.source,
+            'state': entry.state,
         } for entry in hass.config_entries.async_entries()])
 
 
@@ -81,18 +82,16 @@ class ConfigManagerFlowIndexView(HomeAssistantView):
 
     @asyncio.coroutine
     def get(self, request):
-        """List flows in progress."""
+        """List flows that are in progress but not started by a user.
+
+        Example of a non-user initiated flow is a discovered Hue hub that
+        requires user interaction to finish setup.
+        """
         hass = request.app['hass']
 
-        # We only allow filtering by discovery source
-        if (request.query.get('filter_source') !=
-                config_entries.SOURCE_DISCOVERY):
-            return b'', 400
-
-        # We will only allow when filtering by source=discovery.
         return self.json([
             flow for flow in hass.config_entries.flow.async_progress()
-            if flow['source'] == config_entries.SOURCE_DISCOVERY])
+            if flow['source'] != config_entries.SOURCE_USER])
 
     @asyncio.coroutine
     @RequestDataValidator(vol.Schema({

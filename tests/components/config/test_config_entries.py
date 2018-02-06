@@ -7,9 +7,12 @@ from unittest.mock import patch
 import pytest
 import voluptuous as vol
 
+from homeassistant import config_entries as core_ce
 from homeassistant.config_entries import ConfigFlowHandler, HANDLERS
 from homeassistant.setup import async_setup_component
 from homeassistant.components.config import config_entries
+
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture
@@ -18,6 +21,71 @@ def client(hass, test_client):
     hass.loop.run_until_complete(async_setup_component(hass, 'http', {}))
     hass.loop.run_until_complete(config_entries.async_setup(hass))
     yield hass.loop.run_until_complete(test_client(hass.http.app))
+
+
+@asyncio.coroutine
+def test_get_entries(hass, client):
+    """Test get entries."""
+    MockConfigEntry(
+       domain='comp',
+       title='Test 1',
+       source='bla'
+    ).add_to_hass(hass)
+    MockConfigEntry(
+       domain='comp2',
+       title='Test 2',
+       source='bla2',
+       state=core_ce.ENTRY_STATE_LOADED,
+    ).add_to_hass(hass)
+    resp = yield from client.get('/api/config/config_entries/entry')
+    assert resp.status == 200
+    data = yield from resp.json()
+    for entry in data:
+        entry.pop('entry_id')
+    assert data == [
+        {
+            'domain': 'comp',
+            'title': 'Test 1',
+            'source': 'bla',
+            'state': 'not_loaded'
+        },
+        {
+            'domain': 'comp2',
+            'title': 'Test 2',
+            'source': 'bla2',
+            'state': 'loaded',
+        },
+    ]
+
+
+@asyncio.coroutine
+def test_remove_entry(hass, client):
+    """Test removing an entry via the API."""
+    entry = MockConfigEntry(domain='demo')
+    entry.add_to_hass(hass)
+    resp = yield from client.delete(
+        '/api/config/config_entries/entry/{}'.format(entry.entry_id))
+    assert resp.status == 200
+    data = yield from resp.json()
+    assert data == {
+        'require_restart': True
+    }
+
+
+@asyncio.coroutine
+def test_available_flows(hass, client):
+    """Test querying the available flows."""
+    with patch.object(core_ce, 'FLOWS', ['hello', 'world']):
+        resp = yield from client.get(
+            '/api/config/config_entries/flow_handlers')
+        assert resp.status == 200
+        data = yield from resp.json()
+        assert data == ['hello', 'world']
+
+
+############################
+#  FLOW MANAGER API TESTS  #
+############################
 
 
 @asyncio.coroutine
@@ -163,36 +231,74 @@ def test_two_step_flow(hass, client):
 
 
 @asyncio.coroutine
-def test_aborting_flow(hass, client):
-    """."""
-    # TODO
-
-
-@asyncio.coroutine
-def test_get_entries(hass, client):
-    """."""
-    # TODO
-
-
-@asyncio.coroutine
 def test_get_progress_index(hass, client):
-    """."""
-    # TODO
+    """Test querying for ."""
+    class TestFlow(ConfigFlowHandler):
+        VERSION = 5
+        ENTRY_SCHEMA = vol.Schema({
+            'id': str,
+            'token': str
+        })
+
+        @asyncio.coroutine
+        def async_step_hassio(self, info):
+            return (yield from self.async_step_account())
+
+        @asyncio.coroutine
+        def async_step_account(self, user_input=None):
+            return self.async_show_form(
+                step_id='account',
+                title='Finish setup'
+            )
+
+    with patch.dict(HANDLERS, {'test': TestFlow}):
+        form = yield from hass.config_entries.flow.async_init(
+            'test', source='hassio')
+
+    resp = yield from client.get('/api/config/config_entries/flow')
+    assert resp.status == 200
+    data = yield from resp.json()
+    assert data == [
+        {
+            'flow_id': form['flow_id'],
+            'domain': 'test',
+            'source': 'hassio'
+        }
+    ]
+
 
 
 @asyncio.coroutine
 def test_get_progress_flow(hass, client):
-    """."""
-    # TODO
+    """Test we can query the API for same result as we get from init a flow."""
+    class TestFlow(ConfigFlowHandler):
+        @asyncio.coroutine
+        def async_step_init(self, user_input=None):
+            schema = OrderedDict()
+            schema[vol.Required('username')] = str
+            schema[vol.Required('password')] = str
 
+            return self.async_show_form(
+                title='test-title',
+                step_id='init',
+                description='test-description',
+                data_schema=schema,
+                errors={
+                    'username': 'Should be unique.'
+                }
+            )
 
-@asyncio.coroutine
-def test_remove_entry(hass, client):
-    """."""
-    # TODO
+    with patch.dict(HANDLERS, {'test': TestFlow}):
+        resp = yield from client.post('/api/config/config_entries/flow',
+                                      json={'domain': 'test'})
 
+    assert resp.status == 200
+    data = yield from resp.json()
 
-@asyncio.coroutine
-def test_available_flows(hass, client):
-    """."""
-    # TODO
+    resp2 = yield from client.get(
+        '/api/config/config_entries/flow/{}'.format(data['flow_id']))
+
+    assert resp2.status == 200
+    data2 = yield from resp2.json()
+
+    assert data == data2

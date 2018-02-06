@@ -26,12 +26,18 @@ def async_setup_entry(hass, entry):
         ATTR_FRIENDLY_NAME: entry.data['name']
     })
 
+    # Indicate setup was successful.
+    return True
+
 
 @asyncio.coroutine
 def async_unload_entry(hass, entry):
     """Unload an entry."""
     entity_id = '{}.{}'.format(DOMAIN, entry.data['object_id'])
     hass.states.async_remove(entity_id)
+
+    # Indicate unload was successful.
+    return True
 
 
 @config_entries.HANDLERS.register(DOMAIN)

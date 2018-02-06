@@ -13,6 +13,7 @@ When a config flow is started for a domain, Home Assistant will make sure to
 load all dependencies and install the requirements.
 """
 import asyncio
+import logging
 import os
 import uuid
 
@@ -23,6 +24,7 @@ from .util.json import load_json, save_json
 from .util.decorator import Registry
 
 
+_LOGGER = logging.getLogger(__name__)
 HANDLERS = Registry()
 # Components that have config flows. In future we will auto-generate this list.
 FLOWS = [
@@ -36,22 +38,23 @@ PATH_CONFIG = '.config_entries.json'
 
 SAVE_DELAY = 1
 
-
 RESULT_TYPE_FORM = 'form'
 RESULT_TYPE_CREATE_ENTRY = 'create_entry'
 RESULT_TYPE_ABORT = 'abort'
-# RESULT_TYPE_LOADING = 'loading' (auto refresh in 1 seconds)
 
-# Future
-# Allow strategies. Like max 1 account allowed,
+ENTRY_STATE_LOADED = 'loaded'
+ENTRY_STATE_SETUP_ERROR = 'setup_error'
+ENTRY_STATE_NOT_LOADED = 'not_loaded'
 
 
 class ConfigEntry:
     """Hold a configuration entry."""
 
-    __slots__ = ('entry_id', 'version', 'domain', 'title', 'data', 'source')
+    __slots__ = ('entry_id', 'version', 'domain', 'title', 'data', 'source',
+                 'state')
 
-    def __init__(self, version, domain, title, data, source, entry_id=None):
+    def __init__(self, version, domain, title, data, source, entry_id=None,
+                 state=ENTRY_STATE_NOT_LOADED):
         """Initialize a config entry."""
         # Unique id of the config entry
         self.entry_id = entry_id or uuid.uuid4().hex
@@ -71,6 +74,52 @@ class ConfigEntry:
         # Source of the configuration (user, discovery, cloud)
         self.source = source
 
+        # State of the entry (LOADED, NOT_LOADED)
+        self.state = state
+
+    @asyncio.coroutine
+    def async_setup(self, hass, *, component=None):
+        """Set up an entry."""
+        if component is None:
+            component = getattr(hass.components, self.domain)
+
+        try:
+            result = yield from component.async_setup_entry(hass, self)
+
+            if not isinstance(result, bool):
+                _LOGGER.error('%s.async_config_entry did not return boolean',
+                              self.domain)
+        except Exception:  # pylint: disable=bare-except
+            _LOGGER.exception('Error setting up entry %s for %s',
+                              self.title, self.domain)
+            result = False
+
+        if result:
+            self.state = ENTRY_STATE_LOADED
+        else:
+            self.state = ENTRY_STATE_SETUP_ERROR
+
+    @asyncio.coroutine
+    def async_unload(self, hass):
+        """Unload an entry.
+
+        Returns if unload is possible and was successful.
+        """
+        component = getattr(hass.components, self.domain)
+
+        supports_unload = hasattr(component, 'async_unload_entry')
+
+        if not supports_unload:
+            return False
+
+        try:
+            result = yield from component.async_unload_entry(hass, self)
+            return result
+        except Exception:  # pylint: disable=bare-except
+            _LOGGER.exception('Error unloading entry %s for %s',
+                              self.title, self.domain)
+            return False
+
     def as_dict(self):
         """Return dictionary version of this entry."""
         return {
@@ -80,6 +129,7 @@ class ConfigEntry:
             'title': self.title,
             'data': self.data,
             'source': self.source,
+            'state': self.state,
         }
 
 
@@ -138,6 +188,27 @@ class ConfigEntries:
         return [entry for entry in self._entries if entry.domain == domain]
 
     @asyncio.coroutine
+    def async_add_entry(self, entry):
+        """Add an entry."""
+        handler = yield from self.flow.async_get_handler(entry.domain)
+
+        # Raises vol.Invalid if data does not conform schema
+        handler.ENTRY_SCHEMA(entry.data)
+
+        self._entries.append(entry)
+        self._async_schedule_save()
+
+        # Setup entry
+        if entry.domain in self.hass.config.components:
+            # Component already set up, just need to call setup_entry
+            yield from entry.async_setup(self.hass)
+        else:
+            # Setting up component will also load the entries
+            self.hass.async_add_job(
+                async_setup_component, self.hass, entry.domain,
+                self._hass_config)
+
+    @asyncio.coroutine
     def async_remove(self, entry_id):
         """Remove an entry."""
         found = None
@@ -150,42 +221,14 @@ class ConfigEntries:
             raise UnknownEntry
 
         entry = self._entries[found]
-        component = getattr(self.hass.components, entry.domain)
-        supports_unload = hasattr(component, 'async_unload_entry')
-
-        if supports_unload:
-            yield from component.async_unload_entry(self.hass, entry)
-
         self._entries.pop(found)
         self._async_schedule_save()
 
+        unloaded = yield from entry.async_unload(self.hass)
+
         return {
-            'require_restart': not supports_unload
+            'require_restart': not unloaded
         }
-
-    @asyncio.coroutine
-    def async_add_entry(self, entry):
-        """Add an entry."""
-        handler = yield from self.flow.async_get_handler(entry.domain)
-
-        # Raises vol.Invalid if data does not conform schema
-        handler.ENTRY_SCHEMA(entry.data)
-
-        self._entries.append(entry)
-
-        # Setup entry
-        if entry.domain in self.hass.config.components:
-            # Component already set up, just need to call setup_entry
-            component = getattr(self.hass.components, entry.domain)
-            self.hass.async_add_job(
-                component.async_setup_entry, self.hass, entry)
-        else:
-            # Setting up component will also load the entries
-            self.hass.async_add_job(
-                async_setup_component, self.hass, entry.domain,
-                self._hass_config)
-
-        self._async_schedule_save()
 
     @asyncio.coroutine
     def async_load(self):
@@ -259,7 +302,7 @@ class FlowManager:
         } for flow in self._progress.values()]
 
     @asyncio.coroutine
-    def async_init(self, domain):
+    def async_init(self, domain, *, source=SOURCE_USER, data=None):
         """Start a configuration flow."""
         handler = yield from self.async_get_handler(
             domain, resolve_reqs_deps=True)
@@ -269,8 +312,14 @@ class FlowManager:
         flow.hass = self.hass
         flow.domain = domain
         flow.flow_id = flow_id
+        flow.source = source
 
-        return (yield from self._async_handle_step(flow, 'init', None))
+        if source == SOURCE_USER:
+            step = 'init'
+        else:
+            step = source
+
+        return (yield from self._async_handle_step(flow, step, data))
 
     @asyncio.coroutine
     def async_configure(self, flow_id, user_input=None):

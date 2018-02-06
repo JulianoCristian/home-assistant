@@ -333,7 +333,8 @@ class MockModule(object):
     # pylint: disable=invalid-name
     def __init__(self, domain=None, dependencies=None, setup=None,
                  requirements=None, config_schema=None, platform_schema=None,
-                 async_setup=None, async_setup_entry=None):
+                 async_setup=None, async_setup_entry=None,
+                 async_unload_entry=None):
         """Initialize the mock module."""
         self.DOMAIN = domain
         self.DEPENDENCIES = dependencies or []
@@ -356,6 +357,9 @@ class MockModule(object):
 
         if async_setup_entry is not None:
             self.async_setup_entry = async_setup_entry
+
+        if async_unload_entry is not None:
+            self.async_unload_entry = async_unload_entry
 
 
 class MockPlatform(object):
@@ -434,8 +438,9 @@ class MockToggleDevice(entity.ToggleEntity):
 class MockConfigEntry(config_entries.ConfigEntry):
     """Helper for creating config entries that adds some defaults."""
 
-    def __init__(self, *, domain, data=None, version=0, entry_id=None,
-                 source=config_entries.SOURCE_USER, title='Mock Title'):
+    def __init__(self, *, domain='test', data=None, version=0, entry_id=None,
+                 source=config_entries.SOURCE_USER, title='Mock Title',
+                 state=None):
         """Initialize a mock config entry."""
         kwargs = {
             'entry_id': entry_id or 'mock-id',
@@ -446,6 +451,8 @@ class MockConfigEntry(config_entries.ConfigEntry):
         }
         if source is not None:
             kwargs['source'] = source
+        if state is not None:
+            kwargs['state'] = state
         super().__init__(**kwargs)
 
     def add_to_hass(self, hass):
